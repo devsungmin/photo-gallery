@@ -1,7 +1,13 @@
 import type { PhotoMeta } from "../types/photo";
 import photosData from "./photos.json";
 
-export const photos: PhotoMeta[] = photosData;
+const base = import.meta.env.BASE_URL;
+
+export const photos: PhotoMeta[] = photosData.map((p) => ({
+  ...p,
+  src: base + p.src.slice(1),
+  thumbnail: base + p.thumbnail.slice(1),
+}));
 
 export const categories: string[] = [
   "all",
