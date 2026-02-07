@@ -15,6 +15,7 @@ dist-ssr
 # Generated files
 src/data/photos.json
 public/thumbnails
+public/optimized
 
 # Editor directories and files
 .vscode/*
