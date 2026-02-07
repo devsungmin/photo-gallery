@@ -1,0 +1,44 @@
+.container {
+  display: flex;
+  gap: 8px;
+  padding: 20px 32px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.container::-webkit-scrollbar {
+  display: none;
+}
+
+.button {
+  padding: 8px 20px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.active:hover {
+  color: #fff;
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 16px;
+  }
+}
