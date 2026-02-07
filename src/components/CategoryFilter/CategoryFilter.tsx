@@ -1,16 +1,13 @@
 import styles from "./CategoryFilter.module.css";
 
-const labels: Record<string, string> = {
-  all: "All",
-  nature: "Nature",
-  city: "City",
-  people: "People",
-};
-
 interface CategoryFilterProps {
   categories: string[];
   selected: string;
   onSelect: (category: string) => void;
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export function CategoryFilter({ categories, selected, onSelect }: CategoryFilterProps) {
@@ -22,7 +19,7 @@ export function CategoryFilter({ categories, selected, onSelect }: CategoryFilte
           className={`${styles.button} ${selected === cat ? styles.active : ""}`}
           onClick={() => onSelect(cat)}
         >
-          {labels[cat] ?? cat}
+          {cat === "all" ? "All" : capitalize(cat)}
         </button>
       ))}
     </div>

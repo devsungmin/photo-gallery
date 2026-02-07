@@ -1,19 +1,18 @@
 export interface PhotoMeta {
-  camera?: string;
-  lens?: string;
-  focalLength?: string;
-  aperture?: string;
-  shutterSpeed?: string;
-  iso?: number;
-  date?: string;
-  location?: string;
+  id: string;
+  fileName: string;
+  src: string;
+  thumbnail: string;
+  category: string;
+  width: number;
+  height: number;
+  dateTaken: string | null;
+  camera: string | null;
+  lens: string | null;
+  aperture: number | null;
+  shutterSpeed: string | null;
+  iso: number | null;
+  focalLength: number | null;
 }
 
-export interface Photo {
-  id: number;
-  title: string;
-  src: string;
-  category: string;
-  tags: string[];
-  meta?: PhotoMeta;
-}
+export type SortKey = "dateTaken" | "camera" | "iso" | "focalLength";

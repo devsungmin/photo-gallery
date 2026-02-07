@@ -1,13 +1,25 @@
 import { useEffect, useCallback } from "react";
-import type { Photo } from "../../types/photo";
+import type { PhotoMeta } from "../../types/photo";
 import styles from "./Lightbox.module.css";
 
 interface LightboxProps {
-  photos: Photo[];
+  photos: PhotoMeta[];
   currentIndex: number;
   onClose: () => void;
   onPrev: () => void;
   onNext: () => void;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleDateString("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function Lightbox({ photos, currentIndex, onClose, onPrev, onNext }: LightboxProps) {
@@ -33,64 +45,60 @@ export function Lightbox({ photos, currentIndex, onClose, onPrev, onNext }: Ligh
 
   if (!photo) return null;
 
-  const { meta } = photo;
+  const exifEntries: { icon: string; label: string; value: string }[] = [];
+
+  if (photo.dateTaken) {
+    exifEntries.push({ icon: "\ud83d\udcc5", label: "촬영일시", value: formatDate(photo.dateTaken) });
+  }
+  if (photo.camera) {
+    exifEntries.push({ icon: "\ud83d\udcf7", label: "카메라", value: photo.camera });
+  }
+  if (photo.lens) {
+    exifEntries.push({ icon: "\ud83d\udd0d", label: "렌즈", value: photo.lens });
+  }
+
+  const settings = [
+    photo.focalLength ? `${photo.focalLength}mm` : null,
+    photo.aperture ? `f/${photo.aperture}` : null,
+    photo.shutterSpeed,
+    photo.iso ? `ISO ${photo.iso}` : null,
+  ].filter(Boolean);
+
+  if (settings.length > 0) {
+    exifEntries.push({ icon: "\u2699\ufe0f", label: "설정", value: settings.join("  \u00b7  ") });
+  }
 
   return (
     <div className={styles.overlay} onClick={onClose}>
       <div className={styles.content} onClick={(e) => e.stopPropagation()}>
-        <img className={styles.image} src={photo.src.replace("w=600&h=400", "w=1200&h=800")} alt={photo.title} />
+        <img className={styles.image} src={photo.src} alt={photo.fileName} />
         <div className={styles.info}>
-          <div className={styles.title}>{photo.title}</div>
-          {meta && (
+          <div className={styles.fileName}>{photo.fileName}</div>
+          {exifEntries.length > 0 && (
             <div className={styles.meta}>
-              {meta.location && (
-                <div className={styles.metaItem}>
-                  <span className={styles.metaIcon}>&#x1f4cd;</span>
-                  <span>{meta.location}</span>
+              {exifEntries.map((entry) => (
+                <div key={entry.label} className={styles.metaItem}>
+                  <span className={styles.metaIcon}>{entry.icon}</span>
+                  <span className={entry.label === "설정" ? styles.exifValues : ""}>{entry.value}</span>
                 </div>
-              )}
-              {meta.date && (
-                <div className={styles.metaItem}>
-                  <span className={styles.metaIcon}>&#x1f4c5;</span>
-                  <span>{meta.date}</span>
-                </div>
-              )}
-              {meta.camera && (
-                <div className={styles.metaItem}>
-                  <span className={styles.metaIcon}>&#x1f4f7;</span>
-                  <span>{meta.camera}</span>
-                </div>
-              )}
-              {meta.lens && (
-                <div className={styles.metaItem}>
-                  <span className={styles.metaIcon}>&#x1f50d;</span>
-                  <span>{meta.lens}</span>
-                </div>
-              )}
-              {(meta.focalLength || meta.aperture || meta.shutterSpeed || meta.iso) && (
-                <div className={styles.metaItem}>
-                  <span className={styles.metaIcon}>&#x2699;&#xfe0f;</span>
-                  <span className={styles.exifValues}>
-                    {[meta.focalLength, meta.aperture, meta.shutterSpeed, meta.iso ? `ISO ${meta.iso}` : null]
-                      .filter(Boolean)
-                      .join("  ·  ")}
-                  </span>
-                </div>
-              )}
+              ))}
             </div>
           )}
+          <div className={styles.counter}>
+            {currentIndex + 1} / {photos.length}
+          </div>
         </div>
       </div>
       <button className={styles.close} onClick={onClose} aria-label="Close">
         &times;
       </button>
       {currentIndex > 0 && (
-        <button className={`${styles.nav} ${styles.prev}`} onClick={onPrev} aria-label="Previous">
+        <button className={`${styles.nav} ${styles.prev}`} onClick={(e) => { e.stopPropagation(); onPrev(); }} aria-label="Previous">
           &#8249;
         </button>
       )}
       {currentIndex < photos.length - 1 && (
-        <button className={`${styles.nav} ${styles.next}`} onClick={onNext} aria-label="Next">
+        <button className={`${styles.nav} ${styles.next}`} onClick={(e) => { e.stopPropagation(); onNext(); }} aria-label="Next">
           &#8250;
         </button>
       )}

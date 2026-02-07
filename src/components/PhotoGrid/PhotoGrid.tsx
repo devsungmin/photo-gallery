@@ -1,9 +1,9 @@
-import type { Photo } from "../../types/photo";
+import type { PhotoMeta } from "../../types/photo";
 import { PhotoCard } from "../PhotoCard/PhotoCard";
 import styles from "./PhotoGrid.module.css";
 
 interface PhotoGridProps {
-  photos: Photo[];
+  photos: PhotoMeta[];
   onPhotoClick: (index: number) => void;
 }
 
