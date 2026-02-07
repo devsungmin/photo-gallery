@@ -1,3 +1,5 @@
+export type ViewMode = "timeline" | "grid";
+
 export interface PhotoMeta {
   id: string;
   fileName: string;
@@ -14,5 +16,3 @@ export interface PhotoMeta {
   iso: number | null;
   focalLength: number | null;
 }
-
-export type SortKey = "dateTaken" | "camera" | "iso" | "focalLength";
