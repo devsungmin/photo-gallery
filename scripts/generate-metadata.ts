@@ -1,3 +1,6 @@
+// EXIF DateTimeOriginal에 타임존 정보가 없으므로 KST 기준으로 고정
+process.env.TZ = "Asia/Seoul";
+
 import fs from "node:fs";
 import path from "node:path";
 import { execSync } from "node:child_process";
@@ -123,9 +126,27 @@ async function convertToWebp(
     }
   }
 
+  // 추출된 JPEG에 Orientation이 없을 수 있으므로 원본에서 가져옴
   const metadata = await sharp(sourceBuffer).metadata();
-  await sharp(sourceBuffer)
-    .rotate()
+  let rotationAngle = 0;
+  if (!metadata.orientation || metadata.orientation === 1) {
+    try {
+      const orientStr = execSync(`exiftool -n -s -s -s -Orientation "${inputPath}"`, { encoding: "utf-8" }).trim();
+      const orient = parseInt(orientStr, 10);
+      if (orient === 6) rotationAngle = 90;
+      else if (orient === 3) rotationAngle = 180;
+      else if (orient === 8) rotationAngle = 270;
+    } catch { /* ignore */ }
+  }
+
+  let pipeline = sharp(sourceBuffer);
+  if (rotationAngle > 0) {
+    pipeline = pipeline.rotate(rotationAngle);
+  } else {
+    pipeline = pipeline.rotate();
+  }
+
+  await pipeline
     .resize({ width: maxWidth, height: maxWidth, fit: "inside", withoutEnlargement: true })
     .webp({ quality })
     .toFile(outputPath);
