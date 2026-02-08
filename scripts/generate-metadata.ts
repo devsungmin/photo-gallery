@@ -81,11 +81,15 @@ async function convertToWebp(
     const tmpJpg = outputPath + ".tmp.jpg";
     try {
       execSync(
-        `sips -s format jpeg -s formatOptions 95 --resampleWidth ${maxWidth} "${inputPath}" --out "${tmpJpg}"`,
+        `sips -s format jpeg -s formatOptions 95 "${inputPath}" --out "${tmpJpg}"`,
         { stdio: "pipe" },
       );
       const metadata = await sharp(tmpJpg).metadata();
-      await sharp(tmpJpg).webp({ quality }).toFile(outputPath);
+      await sharp(tmpJpg)
+        .rotate()
+        .resize({ width: maxWidth, height: maxWidth, fit: "inside", withoutEnlargement: true })
+        .webp({ quality })
+        .toFile(outputPath);
       return metadata;
     } finally {
       if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
@@ -189,6 +193,7 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
         "ExposureTime",
         "ISO",
         "FocalLength",
+        "Orientation",
         "ImageWidth",
         "ImageHeight",
         "ExifImageWidth",
@@ -199,8 +204,14 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
     // No EXIF data available
   }
 
-  const width = (exif?.ExifImageWidth as number) ?? (exif?.ImageWidth as number) ?? metadata?.width ?? 0;
-  const height = (exif?.ExifImageHeight as number) ?? (exif?.ImageHeight as number) ?? metadata?.height ?? 0;
+  let width = (exif?.ExifImageWidth as number) ?? (exif?.ImageWidth as number) ?? metadata?.width ?? 0;
+  let height = (exif?.ExifImageHeight as number) ?? (exif?.ImageHeight as number) ?? metadata?.height ?? 0;
+
+  // EXIF Orientation 5~8은 90°/270° 회전 → width/height swap
+  const orientation = metadata?.orientation ?? 1;
+  if (orientation >= 5 && orientation <= 8) {
+    [width, height] = [height, width];
+  }
 
   const dateTaken = exif?.DateTimeOriginal
     ? new Date(exif.DateTimeOriginal as string | Date).toISOString()
