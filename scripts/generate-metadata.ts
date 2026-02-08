@@ -126,24 +126,26 @@ async function convertToWebp(
     }
   }
 
-  // 추출된 JPEG에 Orientation이 없을 수 있으므로 원본에서 가져옴
   const metadata = await sharp(sourceBuffer).metadata();
+  const rawW = metadata.width || 0;
+  const rawH = metadata.height || 0;
+
+  // 원본 파일에서 Orientation 확인 후, 추출된 JPEG 픽셀 방향과 비교하여 회전 결정
   let rotationAngle = 0;
-  if (!metadata.orientation || metadata.orientation === 1) {
-    try {
-      const orientStr = execSync(`exiftool -n -s -s -s -Orientation "${inputPath}"`, { encoding: "utf-8" }).trim();
-      const orient = parseInt(orientStr, 10);
-      if (orient === 6) rotationAngle = 90;
-      else if (orient === 3) rotationAngle = 180;
-      else if (orient === 8) rotationAngle = 270;
-    } catch { /* ignore */ }
-  }
+  try {
+    const orientStr = execSync(`exiftool -n -s -s -s -Orientation "${inputPath}"`, { encoding: "utf-8" }).trim();
+    const orient = parseInt(orientStr, 10);
+    if ((orient === 6 || orient === 8) && rawW > rawH) {
+      // 세로 사진인데 픽셀이 가로 → 회전 필요
+      rotationAngle = orient === 6 ? 90 : 270;
+    } else if (orient === 3) {
+      rotationAngle = 180;
+    }
+  } catch { /* ignore */ }
 
   let pipeline = sharp(sourceBuffer);
   if (rotationAngle > 0) {
     pipeline = pipeline.rotate(rotationAngle);
-  } else {
-    pipeline = pipeline.rotate();
   }
 
   await pipeline
