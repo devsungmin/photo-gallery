@@ -11,10 +11,10 @@ const OUTPUT_FILE = path.resolve("src/data/photos.json");
 const THUMB_WIDTH = 400;
 const OPTIMIZED_MAX = 2400;
 // sharp가 직접 처리 가능한 포맷
-const SHARP_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".tiff", ".dng"]);
+const SHARP_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".tiff"]);
 // 네이티브 도구로만 처리 가능한 포맷 (sharp 미지원)
 const HEIC_EXTENSIONS = new Set([".heic", ".heif"]);
-const RAW_EXTENSIONS = new Set([".arw", ".cr2", ".cr3", ".nef", ".orf", ".rw2", ".raf", ".pef", ".srw"]);
+const RAW_EXTENSIONS = new Set([".arw", ".cr2", ".cr3", ".nef", ".orf", ".rw2", ".raf", ".pef", ".srw", ".dng"]);
 const NATIVE_ONLY_EXTENSIONS = new Set([...HEIC_EXTENSIONS, ...RAW_EXTENSIONS]);
 const IS_MAC = process.platform === "darwin";
 const IMAGE_EXTENSIONS = new Set([...SHARP_EXTENSIONS, ...NATIVE_ONLY_EXTENSIONS]);
@@ -105,8 +105,8 @@ async function convertToWebp(
       if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
     }
   } else {
-    // RAW → dcraw가 PPM을 stdout으로 출력 → sharp가 버퍼로 읽기
-    sourceBuffer = execSync(`dcraw -c -w "${inputPath}"`, {
+    // RAW/DNG → dcraw_emu(libraw)가 PPM을 stdout으로 출력 → sharp가 버퍼로 읽기
+    sourceBuffer = execSync(`dcraw_emu -c -w "${inputPath}"`, {
       maxBuffer: 200 * 1024 * 1024,
     });
   }
