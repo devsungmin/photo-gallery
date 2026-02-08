@@ -10,11 +10,9 @@ const OPTIMIZED_DIR = path.resolve("public/optimized");
 const OUTPUT_FILE = path.resolve("src/data/photos.json");
 const THUMB_WIDTH = 400;
 const OPTIMIZED_MAX = 2400;
-// 브라우저가 직접 표시 가능한 포맷
-const WEB_SAFE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif"]);
 // sharp가 직접 처리 가능한 포맷
-const SHARP_EXTENSIONS = new Set([...WEB_SAFE_EXTENSIONS, ".tiff", ".dng"]);
-// sips로만 처리 가능한 포맷 (sharp가 미지원)
+const SHARP_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".tiff", ".dng"]);
+// sips로만 처리 가능한 포맷 (sharp 미지원)
 const SIPS_ONLY_EXTENSIONS = new Set([".heic", ".heif", ".arw", ".cr2", ".cr3", ".nef", ".orf", ".rw2", ".raf", ".pef", ".srw"]);
 const IMAGE_EXTENSIONS = new Set([...SHARP_EXTENSIONS, ...SIPS_ONLY_EXTENSIONS]);
 
@@ -66,21 +64,24 @@ async function scanImages(dir: string, baseDir: string): Promise<string[]> {
   return files;
 }
 
-/** macOS sips를 사용해 이미지를 JPEG로 변환 */
-function convertWithSips(
+/** macOS sips로 임시 JPEG 생성 후 sharp로 WebP 변환 */
+async function sipsToWebp(
   inputPath: string,
   outputPath: string,
   maxWidth: number,
-  quality = 90,
-): boolean {
+  quality: number,
+): Promise<sharp.Metadata> {
+  const tmpJpg = outputPath + ".tmp.jpg";
   try {
     execSync(
-      `sips -s format jpeg -s formatOptions ${quality} --resampleWidth ${maxWidth} "${inputPath}" --out "${outputPath}"`,
+      `sips -s format jpeg -s formatOptions 95 --resampleWidth ${maxWidth} "${inputPath}" --out "${tmpJpg}"`,
       { stdio: "pipe" },
     );
-    return fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024;
-  } catch {
-    return false;
+    const metadata = await sharp(tmpJpg).metadata();
+    await sharp(tmpJpg).webp({ quality }).toFile(outputPath);
+    return metadata;
+  } finally {
+    if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
   }
 }
 
@@ -90,61 +91,47 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
   const category = parts.length > 1 ? parts[0] : "uncategorized";
   const fileName = path.basename(filePath);
   const ext = path.extname(filePath).toLowerCase();
-  const isWebSafe = WEB_SAFE_EXTENSIONS.has(ext);
   const useSips = SIPS_ONLY_EXTENSIONS.has(ext);
-  const jpgName = path.basename(relativePath).replace(path.extname(relativePath), ".jpg");
+  const webpName = path.basename(relativePath).replace(path.extname(relativePath), ".webp");
   const relativeDir = path.dirname(relativePath);
 
-  // --- Thumbnail ---
+  // --- Thumbnail (WebP) ---
   const thumbDir = path.join(THUMBNAILS_DIR, relativeDir);
   fs.mkdirSync(thumbDir, { recursive: true });
-  const thumbJpgPath = path.join(thumbDir, jpgName);
+  const thumbPath = path.join(thumbDir, webpName);
 
-  let metadata: sharp.Metadata | undefined;
+  let metadata: sharp.Metadata;
 
   if (useSips) {
-    // HEIC, ARW 등 sharp 미지원 포맷 → sips로 썸네일 생성
-    convertWithSips(filePath, thumbJpgPath, THUMB_WIDTH, 80);
-    metadata = await sharp(thumbJpgPath).metadata();
+    metadata = await sipsToWebp(filePath, thumbPath, THUMB_WIDTH, 80);
   } else {
-    // sharp가 직접 처리 가능한 포맷
-    const thumbSource = sharp(filePath);
-    metadata = await thumbSource.metadata();
-    await thumbSource
+    const source = sharp(filePath);
+    metadata = await source.metadata();
+    await source
       .rotate()
       .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
-      .jpeg({ quality: 80 })
-      .toFile(thumbJpgPath);
+      .webp({ quality: 80 })
+      .toFile(thumbPath);
   }
 
-  const thumbRelative = path.relative(path.resolve("public"), thumbJpgPath).split(path.sep).join("/");
+  const thumbRelative = path.relative(path.resolve("public"), thumbPath).split(path.sep).join("/");
 
-  // --- Optimized web version (비브라우저 포맷용) ---
-  let src: string;
+  // --- Optimized web version (WebP, 모든 포맷 대상) ---
+  const optDir = path.join(OPTIMIZED_DIR, relativeDir);
+  fs.mkdirSync(optDir, { recursive: true });
+  const optPath = path.join(optDir, webpName);
 
-  if (isWebSafe) {
-    // 브라우저가 직접 표시 가능 → 원본 사용
-    src = "/" + path.relative(path.resolve("public"), filePath).split(path.sep).join("/");
+  if (useSips) {
+    await sipsToWebp(filePath, optPath, OPTIMIZED_MAX, 85);
   } else {
-    // DNG, TIFF, HEIC, ARW 등 → 웹용 JPEG 생성
-    const optDir = path.join(OPTIMIZED_DIR, relativeDir);
-    fs.mkdirSync(optDir, { recursive: true });
-    const optJpgPath = path.join(optDir, jpgName);
-
-    if (useSips) {
-      // sips로 고해상도 JPEG 변환
-      convertWithSips(filePath, optJpgPath, OPTIMIZED_MAX, 90);
-    } else {
-      // sharp로 변환 (DNG, TIFF 등)
-      await sharp(filePath)
-        .rotate()
-        .resize({ width: OPTIMIZED_MAX, height: OPTIMIZED_MAX, fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 90 })
-        .toFile(optJpgPath);
-    }
-
-    src = "/" + path.relative(path.resolve("public"), optJpgPath).split(path.sep).join("/");
+    await sharp(filePath)
+      .rotate()
+      .resize({ width: OPTIMIZED_MAX, height: OPTIMIZED_MAX, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 85 })
+      .toFile(optPath);
   }
+
+  const src = "/" + path.relative(path.resolve("public"), optPath).split(path.sep).join("/");
 
   // --- EXIF ---
   let exif: Record<string, unknown> | null = null;
