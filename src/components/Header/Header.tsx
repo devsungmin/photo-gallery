@@ -20,7 +20,10 @@ export function Header({
 }: HeaderProps) {
   return (
     <header className={styles.header}>
-      <div className={styles.logo}>devsungmin's Photo Gallery</div>
+      <div className={styles.logo}>
+        <img src="/favicon.svg" alt="logo" className={styles.logoIcon} />
+        devsungmin's Photo Gallery
+      </div>
       <div className={styles.controls}>
         <div className={styles.searchWrapper}>
           <input

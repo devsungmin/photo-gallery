@@ -17,6 +17,14 @@
   font-weight: 700;
   color: var(--text-primary);
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logoIcon {
+  width: 32px;
+  height: 32px;
 }
 
 .controls {
