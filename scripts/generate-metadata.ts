@@ -149,6 +149,8 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
 
   let metadata: sharp.Metadata;
 
+  const THUMB_HEIGHT = Math.round(THUMB_WIDTH * 2 / 3); // 3:2 비율
+
   if (useSips) {
     metadata = await convertToWebp(filePath, thumbPath, THUMB_WIDTH, 80);
   } else {
@@ -156,9 +158,26 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
     metadata = await source.metadata();
     await source
       .rotate()
-      .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
+      .resize({ width: THUMB_WIDTH, height: THUMB_WIDTH, fit: "inside", withoutEnlargement: true })
       .webp({ quality: 80 })
       .toFile(thumbPath);
+  }
+
+  // 세로 썸네일 → 3:2 캔버스에 중앙 배치 (흰색 배경)
+  const thumbInfo = await sharp(thumbPath).metadata();
+  if (thumbInfo.width && thumbInfo.height && thumbInfo.height > thumbInfo.width) {
+    const padded = await sharp({
+      create: { width: THUMB_WIDTH, height: THUMB_HEIGHT, channels: 3, background: { r: 255, g: 255, b: 255 } },
+    })
+      .composite([{
+        input: await sharp(thumbPath)
+          .resize({ width: THUMB_WIDTH, height: THUMB_HEIGHT, fit: "inside", withoutEnlargement: true })
+          .toBuffer(),
+        gravity: "centre",
+      }])
+      .webp({ quality: 80 })
+      .toBuffer();
+    fs.writeFileSync(thumbPath, padded);
   }
 
   const thumbRelative = path.relative(path.resolve("public"), thumbPath).split(path.sep).join("/");
