@@ -105,10 +105,19 @@ async function convertToWebp(
       if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
     }
   } else {
-    // RAW/DNG → dcraw_emu(libraw)가 PPM을 stdout으로 출력 → sharp가 버퍼로 읽기
-    sourceBuffer = execSync(`dcraw_emu -c -w "${inputPath}"`, {
-      maxBuffer: 200 * 1024 * 1024,
-    });
+    // RAW/DNG → dcraw_emu로 TIFF 변환 → sharp로 읽기
+    const tmpDir = path.join(OPTIMIZED_DIR, ".tmp");
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const tmpRaw = path.join(tmpDir, `input${ext}`);
+    const tmpTiff = path.join(tmpDir, "input.tiff");
+    try {
+      fs.copyFileSync(inputPath, tmpRaw);
+      execSync(`dcraw_emu -w -T "${tmpRaw}"`, { stdio: "pipe" });
+      sourceBuffer = fs.readFileSync(tmpTiff);
+    } finally {
+      if (fs.existsSync(tmpRaw)) fs.unlinkSync(tmpRaw);
+      if (fs.existsSync(tmpTiff)) fs.unlinkSync(tmpTiff);
+    }
   }
 
   const metadata = await sharp(sourceBuffer).metadata();
