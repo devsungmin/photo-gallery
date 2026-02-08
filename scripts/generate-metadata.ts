@@ -105,18 +105,17 @@ async function convertToWebp(
       if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
     }
   } else {
-    // RAW/DNG → dcraw_emu로 TIFF 변환 → sharp로 읽기
-    const tmpDir = path.join(OPTIMIZED_DIR, ".tmp");
-    fs.mkdirSync(tmpDir, { recursive: true });
-    const tmpRaw = path.join(tmpDir, `input${ext}`);
-    const tmpTiff = path.join(tmpDir, "input.tiff");
+    // RAW/DNG → exiftool로 내장 풀사이즈 JPEG 프리뷰 추출
     try {
-      fs.copyFileSync(inputPath, tmpRaw);
-      execSync(`dcraw_emu -w -T "${tmpRaw}"`, { stdio: "pipe" });
-      sourceBuffer = fs.readFileSync(tmpTiff);
-    } finally {
-      if (fs.existsSync(tmpRaw)) fs.unlinkSync(tmpRaw);
-      if (fs.existsSync(tmpTiff)) fs.unlinkSync(tmpTiff);
+      sourceBuffer = execSync(`exiftool -b -JpgFromRaw "${inputPath}"`, {
+        maxBuffer: 50 * 1024 * 1024,
+      });
+      if (sourceBuffer.length < 1024) throw new Error("No JpgFromRaw");
+    } catch {
+      // JpgFromRaw 실패 시 PreviewImage 시도 (DNG 등)
+      sourceBuffer = execSync(`exiftool -b -PreviewImage "${inputPath}"`, {
+        maxBuffer: 50 * 1024 * 1024,
+      });
     }
   }
 
