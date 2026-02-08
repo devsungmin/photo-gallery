@@ -12,9 +12,12 @@ const THUMB_WIDTH = 400;
 const OPTIMIZED_MAX = 2400;
 // sharp가 직접 처리 가능한 포맷
 const SHARP_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".tiff", ".dng"]);
-// sips로만 처리 가능한 포맷 (sharp 미지원)
-const SIPS_ONLY_EXTENSIONS = new Set([".heic", ".heif", ".arw", ".cr2", ".cr3", ".nef", ".orf", ".rw2", ".raf", ".pef", ".srw"]);
-const IMAGE_EXTENSIONS = new Set([...SHARP_EXTENSIONS, ...SIPS_ONLY_EXTENSIONS]);
+// 네이티브 도구로만 처리 가능한 포맷 (sharp 미지원)
+const HEIC_EXTENSIONS = new Set([".heic", ".heif"]);
+const RAW_EXTENSIONS = new Set([".arw", ".cr2", ".cr3", ".nef", ".orf", ".rw2", ".raf", ".pef", ".srw"]);
+const NATIVE_ONLY_EXTENSIONS = new Set([...HEIC_EXTENSIONS, ...RAW_EXTENSIONS]);
+const IS_MAC = process.platform === "darwin";
+const IMAGE_EXTENSIONS = new Set([...SHARP_EXTENSIONS, ...NATIVE_ONLY_EXTENSIONS]);
 
 interface PhotoMeta {
   id: string;
@@ -64,25 +67,57 @@ async function scanImages(dir: string, baseDir: string): Promise<string[]> {
   return files;
 }
 
-/** macOS sips로 임시 JPEG 생성 후 sharp로 WebP 변환 */
-async function sipsToWebp(
+/** 네이티브 도구로 이미지를 WebP로 변환 (macOS: sips, Linux: dcraw/heif-convert) */
+async function convertToWebp(
   inputPath: string,
   outputPath: string,
   maxWidth: number,
   quality: number,
 ): Promise<sharp.Metadata> {
-  const tmpJpg = outputPath + ".tmp.jpg";
-  try {
-    execSync(
-      `sips -s format jpeg -s formatOptions 95 --resampleWidth ${maxWidth} "${inputPath}" --out "${tmpJpg}"`,
-      { stdio: "pipe" },
-    );
-    const metadata = await sharp(tmpJpg).metadata();
-    await sharp(tmpJpg).webp({ quality }).toFile(outputPath);
-    return metadata;
-  } finally {
-    if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
+  const ext = path.extname(inputPath).toLowerCase();
+
+  if (IS_MAC) {
+    // macOS: sips → 임시 JPEG → sharp → WebP
+    const tmpJpg = outputPath + ".tmp.jpg";
+    try {
+      execSync(
+        `sips -s format jpeg -s formatOptions 95 --resampleWidth ${maxWidth} "${inputPath}" --out "${tmpJpg}"`,
+        { stdio: "pipe" },
+      );
+      const metadata = await sharp(tmpJpg).metadata();
+      await sharp(tmpJpg).webp({ quality }).toFile(outputPath);
+      return metadata;
+    } finally {
+      if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
+    }
   }
+
+  // Linux
+  let sourceBuffer: Buffer;
+
+  if (HEIC_EXTENSIONS.has(ext)) {
+    // HEIC → heif-convert → 임시 JPEG → sharp
+    const tmpJpg = outputPath + ".tmp.jpg";
+    try {
+      execSync(`heif-convert "${inputPath}" "${tmpJpg}"`, { stdio: "pipe" });
+      sourceBuffer = fs.readFileSync(tmpJpg);
+    } finally {
+      if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
+    }
+  } else {
+    // RAW → dcraw가 PPM을 stdout으로 출력 → sharp가 버퍼로 읽기
+    sourceBuffer = execSync(`dcraw -c -w "${inputPath}"`, {
+      maxBuffer: 200 * 1024 * 1024,
+    });
+  }
+
+  const metadata = await sharp(sourceBuffer).metadata();
+  await sharp(sourceBuffer)
+    .rotate()
+    .resize({ width: maxWidth, height: maxWidth, fit: "inside", withoutEnlargement: true })
+    .webp({ quality })
+    .toFile(outputPath);
+  return metadata;
 }
 
 async function processImage(filePath: string): Promise<PhotoMeta> {
@@ -91,7 +126,7 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
   const category = parts.length > 1 ? parts[0] : "uncategorized";
   const fileName = path.basename(filePath);
   const ext = path.extname(filePath).toLowerCase();
-  const useSips = SIPS_ONLY_EXTENSIONS.has(ext);
+  const useSips = NATIVE_ONLY_EXTENSIONS.has(ext);
   const webpName = path.basename(relativePath).replace(path.extname(relativePath), ".webp");
   const relativeDir = path.dirname(relativePath);
 
@@ -103,7 +138,7 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
   let metadata: sharp.Metadata;
 
   if (useSips) {
-    metadata = await sipsToWebp(filePath, thumbPath, THUMB_WIDTH, 80);
+    metadata = await convertToWebp(filePath, thumbPath, THUMB_WIDTH, 80);
   } else {
     const source = sharp(filePath);
     metadata = await source.metadata();
@@ -122,7 +157,7 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
   const optPath = path.join(optDir, webpName);
 
   if (useSips) {
-    await sipsToWebp(filePath, optPath, OPTIMIZED_MAX, 85);
+    await convertToWebp(filePath, optPath, OPTIMIZED_MAX, 85);
   } else {
     await sharp(filePath)
       .rotate()
