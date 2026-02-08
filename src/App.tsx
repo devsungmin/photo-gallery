@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useDarkMode } from "./hooks/useDarkMode";
 import { photos, categories } from "./data/photos";
 import { Header } from "./components/Header/Header";
@@ -45,6 +45,14 @@ export default function App() {
     [],
   );
 
+  useEffect(() => {
+    try {
+      ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
+    } catch {
+      // AdSense not loaded
+    }
+  }, []);
+
   return (
     <div className={styles.app}>
       <Header
@@ -66,6 +74,16 @@ export default function App() {
           onNext={nextPhoto}
         />
       )}
+      <footer className={styles.adFooter}>
+        <ins
+          className="adsbygoogle"
+          style={{ display: "block" }}
+          data-ad-client="ca-pub-3650765722309268"
+          data-ad-slot="auto"
+          data-ad-format="auto"
+          data-full-width-responsive="true"
+        />
+      </footer>
     </div>
   );
 }
