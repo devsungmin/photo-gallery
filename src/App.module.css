@@ -8,3 +8,60 @@
   padding: 1rem 0;
   text-align: center;
 }
+
+.instagramFloat {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 12px;
+  border: none;
+  border-radius: 50px;
+  background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s, box-shadow 0.2s, gap 0.3s, padding 0.3s;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.instagramFloat svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.instagramFloat span {
+  max-width: 0;
+  opacity: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: max-width 0.3s, opacity 0.3s;
+}
+
+@media (hover: hover) {
+  .instagramFloat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    gap: 8px;
+    padding: 10px 16px;
+  }
+
+  .instagramFloat:hover span {
+    max-width: 150px;
+    opacity: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .instagramFloat {
+    bottom: 16px;
+    right: 16px;
+  }
+}
