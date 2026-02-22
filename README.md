@@ -81,4 +81,4 @@ npm run build
 
 ## 📄 라이선스 (License)
 
-이 프로젝트는 **MIT 라이선스**를 따릅니다.
+이 프로젝트는 **MIT 라이선스**를 따릅니다. 자세한 내용은 [LICENSE](LICENSE) 파일을 참조하세요.
