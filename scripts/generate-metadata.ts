@@ -2,8 +2,8 @@
 process.env.TZ = "Asia/Seoul";
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
 import exifr from "exifr";
 import sharp from "sharp";
 
@@ -13,14 +13,7 @@ const OPTIMIZED_DIR = path.resolve("public/optimized");
 const OUTPUT_FILE = path.resolve("src/data/photos.json");
 const THUMB_WIDTH = 400;
 const OPTIMIZED_MAX = 2400;
-// sharp가 직접 처리 가능한 포맷
-const SHARP_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".avif", ".tiff"]);
-// 네이티브 도구로만 처리 가능한 포맷 (sharp 미지원)
-const HEIC_EXTENSIONS = new Set([".heic", ".heif"]);
-const RAW_EXTENSIONS = new Set([".arw", ".cr2", ".cr3", ".nef", ".orf", ".rw2", ".raf", ".pef", ".srw", ".dng"]);
-const NATIVE_ONLY_EXTENSIONS = new Set([...HEIC_EXTENSIONS, ...RAW_EXTENSIONS]);
-const IS_MAC = process.platform === "darwin";
-const IMAGE_EXTENSIONS = new Set([...SHARP_EXTENSIONS, ...NATIVE_ONLY_EXTENSIONS]);
+const CONCURRENCY = Math.max(1, os.cpus().length);
 
 interface PhotoMeta {
   id: string;
@@ -54,15 +47,15 @@ function formatCamera(make: string | undefined, model: string | undefined): stri
   return m;
 }
 
-async function scanImages(dir: string, baseDir: string): Promise<string[]> {
+async function scanImages(dir: string): Promise<string[]> {
   const files: string[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      files.push(...(await scanImages(fullPath, baseDir)));
-    } else if (IMAGE_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+      files.push(...(await scanImages(fullPath)));
+    } else if (path.extname(entry.name).toLowerCase() === ".webp") {
       files.push(fullPath);
     }
   }
@@ -70,121 +63,30 @@ async function scanImages(dir: string, baseDir: string): Promise<string[]> {
   return files;
 }
 
-/** 네이티브 도구로 이미지를 WebP로 변환 (macOS: sips, Linux: dcraw/heif-convert) */
-async function convertToWebp(
-  inputPath: string,
-  outputPath: string,
-  maxWidth: number,
-  quality: number,
-): Promise<sharp.Metadata> {
-  const ext = path.extname(inputPath).toLowerCase();
-
-  if (IS_MAC) {
-    // macOS: sips → 임시 JPEG → sharp → WebP
-    const tmpJpg = outputPath + ".tmp.jpg";
-    try {
-      execSync(
-        `sips -s format jpeg -s formatOptions 95 "${inputPath}" --out "${tmpJpg}"`,
-        { stdio: "pipe" },
-      );
-      const metadata = await sharp(tmpJpg).metadata();
-      await sharp(tmpJpg)
-        .rotate()
-        .resize({ width: maxWidth, height: maxWidth, fit: "inside", withoutEnlargement: true })
-        .webp({ quality })
-        .toFile(outputPath);
-      return metadata;
-    } finally {
-      if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
-    }
-  }
-
-  // Linux
-  let sourceBuffer: Buffer;
-
-  if (HEIC_EXTENSIONS.has(ext)) {
-    // HEIC → heif-convert → 임시 JPEG → sharp
-    const tmpJpg = outputPath + ".tmp.jpg";
-    try {
-      execSync(`heif-convert "${inputPath}" "${tmpJpg}"`, { stdio: "pipe" });
-      sourceBuffer = fs.readFileSync(tmpJpg);
-    } finally {
-      if (fs.existsSync(tmpJpg)) fs.unlinkSync(tmpJpg);
-    }
-  } else {
-    // RAW/DNG → exiftool로 내장 풀사이즈 JPEG 프리뷰 추출
-    try {
-      sourceBuffer = execSync(`exiftool -b -JpgFromRaw "${inputPath}"`, {
-        maxBuffer: 50 * 1024 * 1024,
-      });
-      if (sourceBuffer.length < 1024) throw new Error("No JpgFromRaw");
-    } catch {
-      // JpgFromRaw 실패 시 PreviewImage 시도 (DNG 등)
-      sourceBuffer = execSync(`exiftool -b -PreviewImage "${inputPath}"`, {
-        maxBuffer: 50 * 1024 * 1024,
-      });
-    }
-  }
-
-  const metadata = await sharp(sourceBuffer).metadata();
-  const rawW = metadata.width || 0;
-  const rawH = metadata.height || 0;
-
-  // 원본 파일에서 Orientation 확인 후, 추출된 JPEG 픽셀 방향과 비교하여 회전 결정
-  let rotationAngle = 0;
-  try {
-    const orientStr = execSync(`exiftool -n -s -s -s -Orientation "${inputPath}"`, { encoding: "utf-8" }).trim();
-    const orient = parseInt(orientStr, 10);
-    if ((orient === 6 || orient === 8) && rawW > rawH) {
-      // 세로 사진인데 픽셀이 가로 → 회전 필요
-      rotationAngle = orient === 6 ? 90 : 270;
-    } else if (orient === 3) {
-      rotationAngle = 180;
-    }
-  } catch { /* ignore */ }
-
-  let pipeline = sharp(sourceBuffer);
-  if (rotationAngle > 0) {
-    pipeline = pipeline.rotate(rotationAngle);
-  }
-
-  await pipeline
-    .resize({ width: maxWidth, height: maxWidth, fit: "inside", withoutEnlargement: true })
-    .webp({ quality })
-    .toFile(outputPath);
-  return metadata;
-}
-
 async function processImage(filePath: string): Promise<PhotoMeta> {
   const relativePath = path.relative(PHOTOS_DIR, filePath);
   const parts = relativePath.split(path.sep);
   const category = parts.length > 1 ? parts[0] : "uncategorized";
-  const fileName = path.basename(filePath);
-  const ext = path.extname(filePath).toLowerCase();
-  const useSips = NATIVE_ONLY_EXTENSIONS.has(ext);
-  const webpName = path.basename(relativePath).replace(path.extname(relativePath), ".webp");
+  const fileName = path.basename(filePath, ".webp");
+  const webpName = path.basename(relativePath);
   const relativeDir = path.dirname(relativePath);
+
+  // --- Metadata ---
+  const source = sharp(filePath);
+  const metadata = await source.metadata();
 
   // --- Thumbnail (WebP) ---
   const thumbDir = path.join(THUMBNAILS_DIR, relativeDir);
   fs.mkdirSync(thumbDir, { recursive: true });
   const thumbPath = path.join(thumbDir, webpName);
 
-  let metadata: sharp.Metadata;
-
   const THUMB_HEIGHT = Math.round(THUMB_WIDTH * 2 / 3); // 3:2 비율
 
-  if (useSips) {
-    metadata = await convertToWebp(filePath, thumbPath, THUMB_WIDTH, 80);
-  } else {
-    const source = sharp(filePath);
-    metadata = await source.metadata();
-    await source
-      .rotate()
-      .resize({ width: THUMB_WIDTH, height: THUMB_WIDTH, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toFile(thumbPath);
-  }
+  await source
+    .rotate()
+    .resize({ width: THUMB_WIDTH, height: THUMB_WIDTH, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 80 })
+    .toFile(thumbPath);
 
   // 세로 썸네일 → 3:2 캔버스에 중앙 배치 (흰색 배경)
   const thumbInfo = await sharp(thumbPath).metadata();
@@ -205,43 +107,44 @@ async function processImage(filePath: string): Promise<PhotoMeta> {
 
   const thumbRelative = path.relative(path.resolve("public"), thumbPath).split(path.sep).join("/");
 
-  // --- Optimized web version (WebP, 모든 포맷 대상) ---
+  // --- Optimized web version ---
   const optDir = path.join(OPTIMIZED_DIR, relativeDir);
   fs.mkdirSync(optDir, { recursive: true });
   const optPath = path.join(optDir, webpName);
 
-  if (useSips) {
-    await convertToWebp(filePath, optPath, OPTIMIZED_MAX, 85);
-  } else {
-    await sharp(filePath)
-      .rotate()
-      .resize({ width: OPTIMIZED_MAX, height: OPTIMIZED_MAX, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 85 })
-      .toFile(optPath);
-  }
+  await sharp(filePath)
+    .rotate()
+    .resize({ width: OPTIMIZED_MAX, height: OPTIMIZED_MAX, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 85 })
+    .toFile(optPath);
 
   const src = "/" + path.relative(path.resolve("public"), optPath).split(path.sep).join("/");
 
   // --- EXIF ---
+  // WebP 파일은 exifr.parse(filePath)가 지원되지 않으므로
+  // sharp로 EXIF 바이너리를 추출한 뒤 exifr로 파싱
   let exif: Record<string, unknown> | null = null;
   try {
-    exif = await exifr.parse(filePath, {
-      pick: [
-        "DateTimeOriginal",
-        "Make",
-        "Model",
-        "LensModel",
-        "FNumber",
-        "ExposureTime",
-        "ISO",
-        "FocalLength",
-        "Orientation",
-        "ImageWidth",
-        "ImageHeight",
-        "ExifImageWidth",
-        "ExifImageHeight",
-      ],
-    });
+    const exifBuffer = metadata.exif;
+    if (exifBuffer) {
+      exif = await exifr.parse(exifBuffer, {
+        pick: [
+          "DateTimeOriginal",
+          "Make",
+          "Model",
+          "LensModel",
+          "FNumber",
+          "ExposureTime",
+          "ISO",
+          "FocalLength",
+          "Orientation",
+          "ImageWidth",
+          "ImageHeight",
+          "ExifImageWidth",
+          "ExifImageHeight",
+        ],
+      });
+    }
   } catch {
     // No EXIF data available
   }
@@ -285,7 +188,7 @@ async function main() {
     process.exit(1);
   }
 
-  const imageFiles = await scanImages(PHOTOS_DIR, PHOTOS_DIR);
+  const imageFiles = await scanImages(PHOTOS_DIR);
 
   if (imageFiles.length === 0) {
     console.log("No images found. Creating empty photos.json.");
@@ -294,16 +197,25 @@ async function main() {
     return;
   }
 
-  console.log(`Found ${imageFiles.length} images. Processing...`);
+  console.log(`Found ${imageFiles.length} images. Processing (${CONCURRENCY} parallel)...`);
 
+  let completed = 0;
   const photos: PhotoMeta[] = [];
-  for (const file of imageFiles) {
-    try {
-      const meta = await processImage(file);
-      photos.push(meta);
-      console.log(`  ✓ ${meta.fileName} (${meta.camera ?? "no EXIF"})`);
-    } catch (err) {
-      console.error(`  ✗ ${path.basename(file)}: ${err}`);
+
+  // 동시 실행 개수를 제한하며 병렬 처리
+  for (let i = 0; i < imageFiles.length; i += CONCURRENCY) {
+    const batch = imageFiles.slice(i, i + CONCURRENCY);
+    const results = await Promise.allSettled(batch.map((file) => processImage(file)));
+
+    for (let j = 0; j < results.length; j++) {
+      completed++;
+      const result = results[j];
+      if (result.status === "fulfilled") {
+        photos.push(result.value);
+        console.log(`  [${completed}/${imageFiles.length}] ✓ ${result.value.fileName} (${result.value.camera ?? "no EXIF"})`);
+      } else {
+        console.error(`  [${completed}/${imageFiles.length}] ✗ ${path.basename(batch[j])}: ${result.reason}`);
+      }
     }
   }
 
