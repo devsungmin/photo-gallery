@@ -1,8 +1,10 @@
+SHELL := /bin/bash
+
 PHOTOS_DIR := public/photos
 QUALITY := 95
 
-# photos 하위의 변환 대상 이미지 (jpg, jpeg, png, arw, heic, dng)
-ORIGINALS := $(shell find $(PHOTOS_DIR) -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.arw' -o -iname '*.heic' -o -iname '*.dng' \) 2>/dev/null)
+# 변환 대상 확장자 패턴 (find용)
+FIND_ORIGINALS := find "$(PHOTOS_DIR)" -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.arw' -o -iname '*.heic' -o -iname '*.dng' \) -print0
 
 .PHONY: convert clean-originals help check-deps
 
@@ -25,13 +27,14 @@ check-deps:
 	}
 
 convert: check-deps ## 새 이미지를 WebP로 변환
-	@if [ -z "$(ORIGINALS)" ]; then \
+	@count=$$(LC_ALL=C $(FIND_ORIGINALS) | LC_ALL=C tr -cd '\0' | LC_ALL=C wc -c | tr -d ' '); \
+	if [ "$$count" = "0" ]; then \
 		echo "변환할 이미지가 없습니다."; \
 		exit 0; \
-	fi
-	@echo "변환 대상: $$(echo $(ORIGINALS) | wc -w | tr -d ' ')개 파일"
-	@SUCCESS=0; FAIL=0; \
-	for file in $(ORIGINALS); do \
+	fi; \
+	echo "변환 대상: $$count개 파일"; \
+	SUCCESS=0; FAIL=0; \
+	while IFS= read -r -d '' file; do \
 		dir=$$(dirname "$$file"); \
 		base=$$(basename "$$file"); \
 		name="$${base%.*}"; \
@@ -53,7 +56,7 @@ convert: check-deps ## 새 이미지를 WebP로 변환
 				FAIL=$$((FAIL + 1)); \
 			fi; \
 		else \
-			tmp_jpg="/tmp/_webp_convert_$$name.jpg"; \
+			tmp_jpg="/tmp/_webp_convert_$$$$_$$name.jpg"; \
 			if sips -s format jpeg -s formatOptions 100 "$$file" --out "$$tmp_jpg" > /dev/null 2>&1; then \
 				if cwebp -q $(QUALITY) -metadata all "$$tmp_jpg" -o "$$output" > /dev/null 2>&1; then \
 					orig_size=$$(stat -f%z "$$file" 2>/dev/null || stat -c%s "$$file"); \
@@ -71,17 +74,18 @@ convert: check-deps ## 새 이미지를 WebP로 변환
 			fi; \
 			rm -f "$$tmp_jpg"; \
 		fi; \
-	done; \
+	done < <($(FIND_ORIGINALS)); \
 	echo ""; \
 	echo "완료! 성공: $$SUCCESS, 실패: $$FAIL"
 
 clean-originals: ## 변환 완료된 원본 삭제
-	@if [ -z "$(ORIGINALS)" ]; then \
+	@count=$$(LC_ALL=C $(FIND_ORIGINALS) | LC_ALL=C tr -cd '\0' | LC_ALL=C wc -c | tr -d ' '); \
+	if [ "$$count" = "0" ]; then \
 		echo "삭제할 원본 파일이 없습니다."; \
 		exit 0; \
-	fi
-	@DELETED=0; SKIPPED=0; \
-	for file in $(ORIGINALS); do \
+	fi; \
+	DELETED=0; SKIPPED=0; \
+	while IFS= read -r -d '' file; do \
 		dir=$$(dirname "$$file"); \
 		base=$$(basename "$$file"); \
 		name="$${base%.*}"; \
@@ -94,6 +98,6 @@ clean-originals: ## 변환 완료된 원본 삭제
 			echo "  ⏭ $$base (WebP 없음, 보존)"; \
 			SKIPPED=$$((SKIPPED + 1)); \
 		fi; \
-	done; \
+	done < <($(FIND_ORIGINALS)); \
 	echo ""; \
 	echo "삭제: $$DELETED, 보존: $$SKIPPED"
