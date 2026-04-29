@@ -5,6 +5,7 @@ import { Header } from "./components/Header/Header";
 import { CategoryFilter } from "./components/CategoryFilter/CategoryFilter";
 import { PhotoGrid } from "./components/PhotoGrid/PhotoGrid";
 import { Lightbox } from "./components/Lightbox/Lightbox";
+import { BackgroundMusic } from "./components/BackgroundMusic/BackgroundMusic";
 import type { ViewMode } from "./types/photo";
 import styles from "./App.module.css";
 
@@ -73,6 +74,7 @@ export default function App() {
           onNext={nextPhoto}
         />
       )}
+      <BackgroundMusic />
       <a
         className={styles.instagramFloat}
         href="https://www.instagram.com/sungmin.photos"
