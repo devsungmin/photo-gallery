@@ -12,10 +12,8 @@ dist
 dist-ssr
 *.local
 
-# Generated files
-src/data/photos.json
-public/thumbnails
-public/optimized
+# Generated files (committed so CI regenerates incrementally — only new photos are processed)
+# src/data/photos.json, public/thumbnails, public/optimized are intentionally tracked.
 
 # Editor directories and files
 .vscode/*

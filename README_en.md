@@ -11,7 +11,7 @@
 - 🔍 **Automated Metadata Extraction**: Automatically parses EXIF data from your photos, extracting information like **Camera Make & Model, Lens, Aperture, Shutter Speed, ISO, and Focal Length**.
 - ⚡ **Automated Image Optimization**: Automatically generates responsive thumbnails and WebP optimized images for fast rendering and bandwidth savings.
 - 🖼️ **Broad Format Support**: Supports standard formats (JPG, PNG, WebP) as well as camera RAW formats (`.arw`, `.cr2`, `.nef`, etc.) and smartphone **HEIC** photos.
-- 📁 **Folder-based Categories**: Categories are automatically classified based on the folder structure created within the `public/photos` directory.
+- 📁 **Folder-based Categories**: Categories are automatically classified based on the folder structure created within the `photos-src` directory.
 - 🔎 **Search & Filter**: Find photos easily using file names, camera models, or lenses, and view them categorized via tabs.
 - 🌗 **Responsive Design & Dark Mode**: Features a completely responsive grid UI with a built-in Lightbox viewer tailored for various screen sizes, alongside comfortable **Dark Mode** support.
 
@@ -40,15 +40,15 @@ npm install
 ```
 
 ### 2️⃣ Add Your Photos
-Place your high-resolution photos or RAW/HEIC files into the `public/photos` directory. Grouping photos into subfolders will **automatically recognize the folder names as categories**.
+Place your high-resolution photos or RAW/HEIC files into the `photos-src` directory. Grouping photos into subfolders will **automatically recognize the folder names as categories**.
 ```text
-public/
-└── photos/
-    ├── 🌿 nature/
-    │   └── DSC0001.ARW
-    └── 🏙️ street/
-        └── IMG_1234.HEIC
+photos-src/
+├── 🌿 nature/
+│   └── DSC0001.ARW
+└── 🏙️ street/
+    └── IMG_1234.HEIC
 ```
+> 💡 Sources live outside `public/`, so they are never copied into the build output (`dist/`). Only the `public/optimized` and `public/thumbnails` produced by `generate` are deployed.
 
 ### 3️⃣ Generate Metadata & Optimize Images
 Run the script to generate WebP thumbnails and high-resolution images for all photos, extract EXIF data, and create the `src/data/photos.json` file.

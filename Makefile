@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-PHOTOS_DIR := public/photos
+PHOTOS_DIR := photos-src
 QUALITY := 95
 
 # 변환 대상 확장자 패턴 (find용)
