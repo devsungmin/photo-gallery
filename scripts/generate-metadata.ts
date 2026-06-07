@@ -107,16 +107,13 @@ async function scanImages(dir: string): Promise<{ images: string[]; unreadable: 
   return { images, unreadable: trulyUnreadable };
 }
 
-// 출력물(썸네일·최적화본)이 모두 존재하고 원본보다 최신이면 재생성 불필요
-function outputsUpToDate(filePath: string, thumbPath: string, optPath: string): boolean {
-  try {
-    const srcMtime = fs.statSync(filePath).mtimeMs;
-    const thumbMtime = fs.statSync(thumbPath).mtimeMs;
-    const optMtime = fs.statSync(optPath).mtimeMs;
-    return thumbMtime >= srcMtime && optMtime >= srcMtime;
-  } catch {
-    return false;
-  }
+// 썸네일·최적화본이 모두 존재하면 재생성 불필요로 간주한다.
+// mtime을 쓰지 않는 이유: git checkout(특히 CI의 actions/checkout)은 mtime을 보존하지 않고
+// 체크아웃 시점으로 새로 찍는다. mtime 기반 판정은 CI에서 전체 재처리를 유발할 수 있다.
+// 사진은 한 번 올리면 내용이 바뀌지 않으므로 "출력물 존재" 만으로 충분하다.
+// (의도적으로 사진을 교체했다면 해당 출력물 또는 photos.json 항목을 지우고 재생성하면 된다.)
+function outputsExist(thumbPath: string, optPath: string): boolean {
+  return fs.existsSync(thumbPath) && fs.existsSync(optPath);
 }
 
 async function processImage(filePath: string, cached?: PhotoMeta): Promise<PhotoMeta> {
@@ -129,11 +126,11 @@ async function processImage(filePath: string, cached?: PhotoMeta): Promise<Photo
   const webpName = fileName + ".webp";
   const relativeDir = path.dirname(relativePath);
 
-  // --- 증분 처리: 출력물이 최신이고 캐시된 메타데이터가 있으면 sharp/exif 작업 전부 skip ---
+  // --- 증분 처리: 출력물이 존재하고 캐시된 메타데이터가 있으면 sharp/exif 작업 전부 skip ---
   {
     const thumbPathCheck = path.join(THUMBNAILS_DIR, relativeDir, webpName);
     const optPathCheck = path.join(OPTIMIZED_DIR, relativeDir, webpName);
-    if (cached && outputsUpToDate(filePath, thumbPathCheck, optPathCheck)) {
+    if (cached && outputsExist(thumbPathCheck, optPathCheck)) {
       return cached;
     }
   }
@@ -188,29 +185,32 @@ async function processImage(filePath: string, cached?: PhotoMeta): Promise<Photo
   const src = "/" + path.relative(path.resolve("public"), optPath).split(path.sep).join("/");
 
   // --- EXIF ---
-  // WebP 파일은 exifr.parse(filePath)가 지원되지 않으므로
-  // sharp로 EXIF 바이너리를 추출한 뒤 exifr로 파싱
+  const EXIF_PICK = [
+    "DateTimeOriginal",
+    "Make",
+    "Model",
+    "LensModel",
+    "FNumber",
+    "ExposureTime",
+    "ISO",
+    "FocalLength",
+    "Orientation",
+    "ImageWidth",
+    "ImageHeight",
+    "ExifImageWidth",
+    "ExifImageHeight",
+  ];
   let exif: Record<string, unknown> | null = null;
   try {
-    const exifBuffer = metadata.exif;
-    if (exifBuffer) {
-      exif = await exifr.parse(exifBuffer, {
-        pick: [
-          "DateTimeOriginal",
-          "Make",
-          "Model",
-          "LensModel",
-          "FNumber",
-          "ExposureTime",
-          "ISO",
-          "FocalLength",
-          "Orientation",
-          "ImageWidth",
-          "ImageHeight",
-          "ExifImageWidth",
-          "ExifImageHeight",
-        ],
-      });
+    if (srcExt.toLowerCase() === ".webp") {
+      // WebP는 exifr.parse(filePath) 미지원 → sharp로 추출한 EXIF 버퍼를 파싱
+      if (metadata.exif) {
+        exif = await exifr.parse(metadata.exif, { pick: EXIF_PICK });
+      }
+    } else {
+      // JPEG/PNG/TIFF는 파일을 직접 파싱하는 쪽이 안정적
+      // (sharp의 EXIF 버퍼를 exifr.parse로 넘기면 일부 포맷에서 예외 발생)
+      exif = await exifr.parse(filePath, { pick: EXIF_PICK });
     }
   } catch {
     // No EXIF data available
