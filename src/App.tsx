@@ -89,11 +89,11 @@ export default function App() {
       <footer className={styles.adFooter}>
         <ins
           className="adsbygoogle"
-          style={{ display: "block" }}
+          style={{ display: "block", textAlign: "center" }}
+          data-ad-layout="in-article"
+          data-ad-format="fluid"
           data-ad-client="ca-pub-3650765722309268"
-          data-ad-slot="auto"
-          data-ad-format="auto"
-          data-full-width-responsive="true"
+          data-ad-slot="7266880377"
         />
       </footer>
     </div>
